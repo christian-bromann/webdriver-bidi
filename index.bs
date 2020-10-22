@@ -57,12 +57,15 @@ spec: WEBDRIVER; urlPrefix: https://w3c.github.io/webdriver/
     text: try; url: dfn-try
     text: WebDriver new session algorithm; url: dfn-webdriver-new-session-algorithm
     text: window handle; url: dfn-window-handle
-spec: ECMASCRIPT urlPrefix: https://tc39.es/ecma262/
+spec: ECMASCRIPT; urlPrefix: https://tc39.es/ecma262/
   type: dfn
     text: Object; url: sec-object-objects
     text: Set; url: sec-set
     text: realm; url: sec-code-realms
-
+spec: HTML; urlPrefix: https://html.spec.whatwg.org/
+  type: dfn
+    text: a browsing context is discarded; url: a-browsing-context-is-discarded
+    text: create a new browsing context; url: creating-a-new-browsing-context
 </pre>
 
 <pre class="link-defaults">
@@ -120,7 +123,8 @@ Command = {
 }
 
 CommandData = (
-  SessionCommand
+  SessionCommand //
+  ContextCommand
 )
 
 EmptyParams = { *text }
@@ -154,13 +158,19 @@ ErrorResponse = {
 
 ResultData = (
   EmptyResult //
-  SessionResult
+  SessionResult //
+  ContextResult
 )
 
 EmptyResult = {}
 
-Event = (
+Event = {
+  EventData,
   *text => any
+}
+
+EventData = (
+  ContextEvent
 )
 </pre>
 
@@ -406,7 +416,7 @@ listeners</dfn>, which is initially empty.
 
 A WebDriver [=/session=] has a <dfn>WebSocket connection</dfn> which is
 a network connection that follows the requirements of the
-[[!RFC6455|WebSocket protocol]].
+[[!RFC6455|WebSocket protocol]]. This is initially null.
 
 <div>
 
@@ -581,6 +591,26 @@ To <dfn>handle an incoming message</dfn> given a [=WebSocket connection=]
 </div>
 
 <div algorithm>
+To <dfn export>emit an event</dfn> given |body| and |browsing context|:
+
+ 1. [=Assert=]: |body| has size 2 and contains "<code>method</code>" and "<code>params</code>".
+
+ 1. If the [=current session=] is null, or the [=current session=]'s [=WebSocket
+    Connection=] is null then return.
+
+ 1. If [=event is enabled=] given [=current session=],
+    |body|["<code>method</code>"] and |browsing context| is false, then return.
+
+ 1. Let |connection| be the [=current session=]'s [=WebSocket connection=].
+
+ 1. Let |serialized| be the result of [=serialize an infra value to JSON
+    bytes=] given |body|.
+
+ 1. [=Send a WebSocket message=] comprised of |serialized| over |connection|.
+
+</div>
+
+<div algorithm>
 To <dfn>respond with an error</dfn> given a [=WebSocket connection=]
 |connection|, |data| and |error code|:
 
@@ -609,6 +639,7 @@ To <dfn>respond with an error</dfn> given a [=WebSocket connection=]
  1. [=Send a WebSocket message=] comprised of |response| over |connection|.
 
 </div>
+
 
 <div algorithm>
 To <dfn>handle a connection closing</dfn> given a
@@ -683,18 +714,6 @@ Common Data Types {#data-types}
 
 This section defines data types which are common to many modules.
 
-## Browsing Context ## {#data_types-browsing_context}
-
-[=remote end definition=] and [=local end definition=]
-```
-BrowsingContext = text;
-```
-
-Each [=/browsing context=] has an associated <dfn export>browsing context id</dfn>,
-which is a string uniquely identifying that browsing context. For browsing
-contexts with an associated WebDriver [=window handle=] the [=/browsing context
-id=] must be the same as the [=window handle=].
-
 ## Realm ## {#data-types-realm}
 
 [=remote end definition=] and [=local end definition=]
@@ -758,12 +777,9 @@ To <dfn lt="updating the event map">update the event map</dfn>, given
 
     1. For each entry |context id| in the |list of contexts|:
 
-      1. If there is no browsing context with [=browsing context id=] |context id| return
-         [=error=] with [=error code=] [=invalid argument=]
-
-      1. Let |context| be the browsing context with id |context id|. If the
-         |event map| does not contain an entry for |context|,
-         set the value of the entry for |context| to a new empty map.
+      1. Let |context| be the result of [=trying=] to [=get a browsing context=]
+         with |context id|.  If the |event map| does not contain an entry for
+         |context|, set the value of the entry for |context| to a new empty map.
 
       1. Get the entry from the |event map| for |context| and append it to
          |targets|.
@@ -783,7 +799,9 @@ To <dfn lt="updating the event map">update the event map</dfn>, given
     filter only those that ought to be returned to the local end.
 </div>
 
-### Status ### {#command-session-status}
+### Commands ### {#module-session-commands}
+
+#### Status #### {#command-session-status}
 
 The <dfn for=commands>status</dfn> command returns information about
 whether a remote end is in a state in which it can create new sessions,
@@ -826,10 +844,10 @@ The [=remote end steps=] are:
 
 2. Return [=success=] with data |body|
 
-### Subscribe ### {#command-session-subscribe}
+#### Subscribe #### {#command-session-subscribe}
 
-The <dfn export for=commands>subscribe</dfn> command enables certain events either
-globally or for a set of browsing contexts
+The <dfn export for=commands>subscribe</dfn> command enables certain events
+either globally or for a set of browsing contexts
 
 Issue: This needs to be generalized to work with realms too
 
@@ -868,7 +886,7 @@ The [=remote end steps=] with |command parameters| are:
        |list of event names|, |list of contexts| and enabled true.
 </div>
 
-### Unsubscribe ### {#command-session-unsubscribe}
+#### Unsubscribe #### {#command-session-unsubscribe}
 
 The <dfn export for=commands>unsubscribe</dfn> command disables events either
 globally or for a set of browsing contexts
@@ -903,4 +921,208 @@ The [=remote end steps=] with |command parameters| are:
 
     1. Return the result of [=updating the event map=] with [=current session=],
        |list of event names|, |list of contexts| and enabled false.
+</div>
+
+
+## Context ## {#module-contexts}
+
+The <dfn export for=modules>context</dfn> module contains commands and
+events relating to browsing contexts.
+
+### Definition ### {#module-context-definition}
+
+[=remote end definition=]
+
+<pre class="cddl remote-cddl">
+
+ContextCommand = (GetContextsCommand)
+</pre>
+
+[=local end definition=]
+
+<pre class="cddl local-cddl">
+
+ContextResult = (GetContextsResult)
+
+ContextEvent = (
+    ContextCreatedEvent //
+    ContextDestroyedEvent
+)
+
+</pre>
+
+### Types ### {#module-context-types}
+
+#### Browsing Context #### {#types-context-browsing-context}
+
+[=remote end definition=] and [=local end definition=]
+
+<pre class="cddl remote-cddl local-cddl">
+BrowsingContext = text;
+</pre>
+
+Each [=/browsing context=] has an associated <dfn export>browsing context
+id</dfn>, which is a string uniquely identifying that browsing context. This is
+implicitly set when the context is created. For browsing contexts with an
+associated WebDriver [=window handle=] the [=/browsing context id=] must be the
+same as the [=window handle=].
+
+<div algorithm>
+To <dfn>get a browsing context</dfn> given |context id|:
+
+ 1. If |context id| is null, return [=success=] with data null.
+
+ 1. If there is no browsing context with [=browsing context id=] |context id| return
+    [=error=] with [=error code=] [=invalid argument=]
+
+ 1. Let |context| be the browsing context with id |context id|.
+
+ 1. Return [=success=] with data |context|
+
+</div>
+
+### Commands ### {#module-context-commands}
+
+#### getContexts ####  {#command-context-getcontexts}
+
+The <dfn export for=commands>getContexts</dfn> command returns a list of all browsing
+contexts that are children of the given context, or all top-level contexts when
+no parent is provided.
+
+<dl>
+   <dt>Command Type</dt>
+   <dd>
+      <pre class="cddl remote-cddl">
+      GetContextsCommand = {
+        method: "target.getContext",
+        params: GetContextsParameters
+      }
+
+      GetContextsParameters = {
+        parent?: BrowsingContext,
+      }
+      </pre>
+   </dd>
+   <dt>Return Type</dt>
+   <dd>
+    <pre class="cddl local-cddl">
+        GetContextsResult = {
+          contexts: [*BrowsingContext]
+        }
+    </pre>
+   </dd>
+</dl>
+
+<div algorithm="remote end steps for targets.getContexts">
+The [=remote end steps=] with |command parameters| are:
+
+  1. Let the |parent id| be the value of the <code>parent</code> field of
+       |command parameters| if present, or null otherwise.
+
+  1. Let |parent| be the result of [=trying=] to [=get a browsing context=] given |parent id|.
+
+  1. If |parent| is null, let |contexts| be a list containing all [=top-level
+     browsing contexts=]. Otherwise let |contexts| be a list containing all
+     [=/browsing contexts=] which are [=child browsing contexts=] of |parent|.
+
+  1. Let |body| be a map matching the <code>GetContextsResult</code>
+     production, with the <code>contexts</code> field set to |contexts|.
+
+  1. Return [=success=] with data |body|.
+
+Issue: Should this contain other data like the current URL for the context.
+
+</div>
+
+### Events ### {#module-contexts-events}
+
+#### contextCreated #### {#event-context-created}
+
+<dl>
+   <dt>Event Type</dt>
+   <dd>
+      <pre class="cddl local-cddl">
+        ContextCreatedEvent = {
+         method: "context.contextCreated",
+         params: ContextCreatedParameters
+       }
+
+       ContextCreatedParameters = {
+         context: BrowsingContext,
+         parent: BrowsingContext / null,
+         url: text,
+       }
+      </pre>
+   </dd>
+</dl>
+The [=remote end event trigger=] is:
+
+<div algorithm="remote end event trigger for context.contextCreated">
+When the [=create a new browsing context=] algorithm is invoked, after the
+[=active document=] of the browsing context is set, run the following steps:
+
+ 1. Let |context| be the newly created browsing context.
+
+ 1. Let |context id| be the [=browsing context id=] for |context|.
+
+ 1. If |context| has a [=parent browsing context=] let |parent id| be the
+    [=browsing context id] of that parent. Otherwise let |parent id| be null.
+
+ 1. Let |document| be |context|'s [=active document=].
+
+ 1. Let |url| be the result of running the [=URL serializer=], given
+    |document|'s [=spec=html/URL=].
+
+ 1. Let |params| be a map matching the <code>ContextCreatedParameters</code>
+    production, with the <code>context</code> field set to |context id|, the
+    <code>parent</code> field set to |parent id|, and the <code>url</code> field
+    set to |url|.
+
+ 1. Let |body| be a map matching the <code>ContextCreatedEvent</code>
+    production, with the <code>params</code> field set to |params|.
+
+ 1. [=Emit an event=] with |body| and |parent id|.
+
+</div>
+
+#### contextDestroyed #### {#event-context-destroyed}
+
+<dl>
+   <dt>Event Type</dt>
+   <dd>
+      <pre class="cddl local-cddl">
+        ContextEvent = {
+         method: "context.contextDestroyed",
+         params: ContextDestroyedParameters
+       }
+
+       ContextDestroyedParameters = {
+         context: BrowsingContext,
+         parent: BrowsingContext / null,
+       }
+      </pre>
+   </dd>
+</dl>
+The [=remote end event trigger=] is:
+
+<div algorithm="remote end event trigger for context.contexDestroyed">
+
+When [=a browsing context is discarded=], run the following steps:
+
+ 1. Let |context| be the browsing context being discarded.
+
+ 1. Let |context id| be the [=browsing context id=] for |context|.
+
+ 1. If |context| has a [=parent browsing context=] let |parent id| be the
+    [=browsing context id=] of that parent. Otherwise let |parent id| be null.
+
+ 1. Let |params| be a map matching the <code>ContextDestroyedParameters</code>
+    production, with the <code>context</code> field set to |context id|,
+    and the <code>parent</code> field set to |parent id|.
+
+ 1. Let |body| be a map matching the <code>ContextDestroyedEvent</code>
+    production, with the <code>params</code> field set to |params|.
+
+ 1. [=Emit an event=] with |body| and |parent id|.
+
 </div>
