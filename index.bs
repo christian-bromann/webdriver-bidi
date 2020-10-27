@@ -994,7 +994,7 @@ no parent is provided.
    <dd>
       <pre class="cddl remote-cddl">
       GetContextsCommand = {
-        method: "target.getContext",
+        method: "context.getContext",
         params: GetContextsParameters
       }
 
