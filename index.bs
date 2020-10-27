@@ -45,6 +45,7 @@ spec: WEBDRIVER; urlPrefix: https://w3c.github.io/webdriver/
     text: intermediary node; url: dfn-intermediary-node
     text: invalid argument; url: dfn-invalid-argument
     text: unknown command; url: dfn-unknown-command
+    text: no such frame; url: dfn-no-such-frame
     text: active sessions; url: dfn-active-session
     text: local end; url: dfn-local-ends
     text: matched capability serialization algorithm; url: dfn-matched-capability-serialization-algorithm
@@ -973,7 +974,7 @@ To <dfn>get a browsing context</dfn> given |context id|:
  1. If |context id| is null, return [=success=] with data null.
 
  1. If there is no browsing context with [=browsing context id=] |context id| return
-    [=error=] with [=error code=] [=invalid argument=]
+    [=error=] with [=error code=] [=no such frame=]
 
  1. Let |context| be the browsing context with id |context id|.
 
